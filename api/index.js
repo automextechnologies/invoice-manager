@@ -4,9 +4,11 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Import logic from the /server directory instead of /api
-// This prevents Vercel from treating every file as a separate function
+// Static imports for all routes to ensure they are registered synchronously
 import invoiceRoutes from '../server/routes/invoiceRoutes.js';
+import customerRoutes from '../server/routes/customerRoutes.js';
+import companyRoutes from '../server/routes/companyRoutes.js';
+import productRoutes from '../server/routes/productRoutes.js';
 import { connectDb } from '../server/config/db.js';
 
 dotenv.config();
@@ -20,30 +22,20 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// API Routes
+// Register routes synchronously
+// Order specific routes before the general /api route to ensure correct matching
+app.use('/api/customers', customerRoutes);
+app.use('/api/company', companyRoutes);
+app.use('/api/products', productRoutes);
 app.use('/api', invoiceRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => res.json({ status: 'API is running' }));
 
-// Initialize DB and dynamic routes
-const init = async () => {
-    try {
-        const dbState = await connectDb();
-        if (dbState.connected) {
-            const { default: customerRoutes } = await import('../server/routes/customerRoutes.js');
-            const { default: companyRoutes } = await import('../server/routes/companyRoutes.js');
-            const { default: productRoutes } = await import('../server/routes/productRoutes.js');
-            
-            app.use('/api/customers', customerRoutes);
-            app.use('/api/company', companyRoutes);
-            app.use('/api/products', productRoutes);
-        }
-    } catch (err) {
-        console.error('DB Init Error:', err.message);
-    }
-};
-
-init();
+// Initiate DB connection in background
+connectDb().catch(err => {
+    console.error('Initial DB Connection Error:', err.message);
+});
 
 export default app;
+

@@ -4,6 +4,9 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import invoiceRoutes from './routes/invoiceRoutes.js';
+import customerRoutes from './routes/customerRoutes.js';
+import companyRoutes from './routes/companyRoutes.js';
+import productRoutes from './routes/productRoutes.js';
 import { connectDb } from './config/db.js';
 
 dotenv.config();
@@ -18,7 +21,7 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// Health checks (defined BEFORE other routes to ensure they always work)
+// Health checks
 app.get('/health', (req, res) => res.json({ status: 'API is running' }));
 app.get('/api/health', (req, res) => res.json({ status: 'API is running' }));
 
@@ -26,39 +29,25 @@ app.get('/api/health', (req, res) => res.json({ status: 'API is running' }));
 const distPath = path.join(__dirname, '../dist');
 app.use(express.static(distPath));
 
-// Routes
+// Routes - Registered synchronously
+app.use('/api/customers', customerRoutes);
+app.use('/api/company', companyRoutes);
+app.use('/api/products', productRoutes);
 app.use('/api', invoiceRoutes);
+
+// Handle React routing, return all requests to React app
+app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) {
+        return next();
+    }
+    res.sendFile(path.join(distPath, 'index.html'));
+});
 
 // Start server
 const startServer = async () => {
     try {
-        const dbState = await connectDb();
-        if (dbState.connected) {
-            const { default: customerRoutes } = await import('./routes/customerRoutes.js');
-            const { default: companyRoutes } = await import('./routes/companyRoutes.js');
-            const { default: productRoutes } = await import('./routes/productRoutes.js');
-            app.use('/api/customers', customerRoutes);
-            app.use('/api/company', companyRoutes);
-            app.use('/api/products', productRoutes);
-        } else {
-            const unavailableHandler = (req, res) => {
-                res.status(503).json({
-                    error: 'Database API unavailable',
-                    details: 'Configure MongoDB credentials to enable data persistence.'
-                });
-            };
-            app.use('/api/customers', unavailableHandler);
-            app.use('/api/company', unavailableHandler);
-            app.use('/api/products', unavailableHandler);
-        }
-
-        // Handle React routing, return all requests to React app
-        app.use((req, res, next) => {
-            if (req.path.startsWith('/api')) {
-                return next();
-            }
-            res.sendFile(path.join(distPath, 'index.html'));
-        });
+        // Initiate DB connection (controllers will handle buffering/errors if not yet connected)
+        connectDb().catch(err => console.error('DB Connection Background Error:', err.message));
 
         app.listen(PORT, '0.0.0.0', () => {
             console.log(`Server is running on port ${PORT}`);
@@ -70,3 +59,4 @@ const startServer = async () => {
 };
 
 startServer();
+
