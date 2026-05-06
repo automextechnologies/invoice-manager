@@ -2,7 +2,6 @@ import path from 'path';
 import fs from 'fs-extra';
 import { fileURLToPath } from 'url';
 import { generatePdf } from '../services/pdfService.js';
-import { uploadToDrive } from '../services/driveService.js';
 import Company from '../models/Company.js';
 import Invoice from '../models/Invoice.js';
 
@@ -127,14 +126,7 @@ export const generateInvoice = async (req, res) => {
             fileName = `${invoiceData.invoiceNumber}-${invoiceData.customerName.replace(/\s+/g, '_')}.pdf`;
         }
 
-        let driveData = null;
-        if (invoiceData.uploadToDrive === true) {
-            if (process.env.DRIVE_FOLDER_ID && fs.existsSync(path.join(__dirname, '../', process.env.GOOGLE_APPLICATION_CREDENTIALS || 'service-account.json'))) {
-                driveData = await uploadToDrive(pdfPath, fileName);
-            } else {
-                console.warn('Google Drive credentials not found or DRIVE_FOLDER_ID missing. Skipping upload.');
-            }
-        }
+
 
         try {
             await Invoice.findOneAndUpdate(
@@ -172,10 +164,7 @@ export const generateInvoice = async (req, res) => {
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
 
-        if (driveData) {
-            res.setHeader('X-Drive-File-Id', driveData.id);
-            res.setHeader('X-Drive-Link', driveData.webViewLink);
-        }
+
 
         const fileStream = fs.createReadStream(pdfPath);
         fileStream.pipe(res);

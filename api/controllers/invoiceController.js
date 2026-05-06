@@ -1,7 +1,6 @@
 const path = require('path');
 const fs = require('fs-extra');
 const { generatePdf } = require('../services/pdfService');
-const { uploadToDrive } = require('../services/driveService');
 const Company = require('../models/Company');
 const Invoice = require('../models/Invoice');
 
@@ -130,15 +129,7 @@ const generateInvoice = async (req, res) => {
             fileName = `${invoiceData.invoiceNumber}-${invoiceData.customerName.replace(/\s+/g, '_')}.pdf`;
         }
 
-        // 3. Upload to Google Drive only when explicitly requested
-        let driveData = null;
-        if (invoiceData.uploadToDrive === true) {
-            if (process.env.DRIVE_FOLDER_ID && fs.existsSync(path.join(__dirname, '../', process.env.GOOGLE_APPLICATION_CREDENTIALS || 'service-account.json'))) {
-                driveData = await uploadToDrive(pdfPath, fileName);
-            } else {
-                console.warn('Google Drive credentials not found or DRIVE_FOLDER_ID missing. Skipping upload.');
-            }
-        }
+
 
         // 4. Save Invoice to Database
         try {
@@ -179,10 +170,7 @@ const generateInvoice = async (req, res) => {
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
 
-        if (driveData) {
-            res.setHeader('X-Drive-File-Id', driveData.id);
-            res.setHeader('X-Drive-Link', driveData.webViewLink);
-        }
+
 
         console.log(`Sending PDF: ${safeFileName}`);
         const fileStream = fs.createReadStream(pdfPath);
