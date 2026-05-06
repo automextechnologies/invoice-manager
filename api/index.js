@@ -1,59 +1,49 @@
-const express = require('express');
-const cors = require('cors');
-require('dotenv').config();
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const invoiceRoutes = require('./routes/invoiceRoutes');
-const { connectDb } = require('./config/db');
+// Import logic from the /server directory instead of /api
+// This prevents Vercel from treating every file as a separate function
+import invoiceRoutes from '../server/routes/invoiceRoutes.js';
+import { connectDb } from '../server/config/db.js';
+
+dotenv.config();
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const app = express();
-const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 
-// Routes
+// API Routes
 app.use('/api', invoiceRoutes);
 
-// Add a test route
-app.get('/health', (req, res) => {
-    res.json({ status: 'API is running' });
-});
+// Health check
+app.get('/api/health', (req, res) => res.json({ status: 'API is running' }));
 
-// Start server logic
-const initApp = async () => {
+// Initialize DB and dynamic routes
+const init = async () => {
     try {
         const dbState = await connectDb();
         if (dbState.connected) {
-            const customerRoutes = require('./routes/customerRoutes');
-            const companyRoutes = require('./routes/companyRoutes');
-            const productRoutes = require('./routes/productRoutes');
+            const { default: customerRoutes } = await import('../server/routes/customerRoutes.js');
+            const { default: companyRoutes } = await import('../server/routes/companyRoutes.js');
+            const { default: productRoutes } = await import('../server/routes/productRoutes.js');
+            
             app.use('/api/customers', customerRoutes);
             app.use('/api/company', companyRoutes);
             app.use('/api/products', productRoutes);
-        } else {
-            const unavailableHandler = (req, res) => {
-                res.status(503).json({
-                    error: 'Database API unavailable',
-                    details: 'Configure MongoDB credentials and install mongoose to enable data persistence.'
-                });
-            };
-            app.use('/api/customers', unavailableHandler);
-            app.use('/api/company', unavailableHandler);
-            app.use('/api/products', unavailableHandler);
         }
-    } catch (error) {
-        console.error('Failed to initialize app:', error.message);
+    } catch (err) {
+        console.error('DB Init Error:', err.message);
     }
 };
 
-initApp();
+init();
 
-// For local development
-if (process.env.NODE_ENV !== 'production') {
-    app.listen(PORT, () => {
-        console.log(`Server is running on port ${PORT}`);
-    });
-}
-
-module.exports = app;
+export default app;
