@@ -1,4 +1,3 @@
-import puppeteer from 'puppeteer';
 import handlebars from 'handlebars';
 import fs from 'fs-extra';
 import path from 'path';
@@ -7,7 +6,13 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+/**
+ * Generates a PDF buffer from provided data and template
+ * @param {Object} data - Data to render in the template
+ * @returns {Promise<Buffer>} - PDF Buffer
+ */
 export const generatePdf = async (data) => {
+    let browser = null;
     try {
         const templatePath = path.join(__dirname, '../templates/invoiceTemplate.html');
         const templateHtml = await fs.readFile(templatePath, 'utf8');
@@ -16,32 +21,53 @@ export const generatePdf = async (data) => {
         const template = handlebars.compile(templateHtml);
         const finalHtml = template(data);
 
-        // Launch puppeteer
-        console.log('Launching browser...');
-        const browser = await puppeteer.launch({
-            args: ['--no-sandbox', '--disable-setuid-sandbox'],
-            headless: 'new'
-        });
+        // Determine if we are on Vercel or Local
+        const isVercel = process.env.VERCEL || process.env.AWS_REGION;
+        
+        console.log(`Launching browser (Environment: ${isVercel ? 'Serverless' : 'Local'})...`);
+        
+        let puppeteer;
+        let options;
+
+        if (isVercel) {
+            // Dynamic import for serverless-specific packages
+            const chromium = (await import('@sparticuz/chromium')).default;
+            puppeteer = (await import('puppeteer-core')).default;
+
+            options = {
+                args: chromium.args,
+                defaultViewport: chromium.defaultViewport,
+                executablePath: await chromium.executablePath(),
+                headless: chromium.headless,
+                ignoreHTTPSErrors: true,
+            };
+        } else {
+            // Local fallback
+            puppeteer = (await import('puppeteer-core')).default;
+            options = {
+                args: ['--no-sandbox', '--disable-setuid-sandbox'],
+                executablePath: process.env.CHROME_PATH || '/usr/bin/google-chrome',
+                headless: true
+            };
+        }
+
+        browser = await puppeteer.launch(options);
 
         const page = await browser.newPage();
         
-        // Increase timeout for slow resource loading
-        await page.setDefaultNavigationTimeout(60000);
+        // Optimize page load
+        await page.setDefaultNavigationTimeout(30000);
 
-        // Set content
+        // Set content with lighter wait strategy for faster generation
         console.log('Setting page content...');
-        await page.setContent(finalHtml, { waitUntil: 'networkidle2', timeout: 60000 });
+        await page.setContent(finalHtml, { 
+            waitUntil: 'load', // Faster than networkidle2, sufficient for most templates
+            timeout: 20000 
+        });
 
-        // Generate PDF
-        const tempDir = path.join(__dirname, '../temp');
-        await fs.ensureDir(tempDir);
-        
-        const tempId = `temp-${Date.now()}-${Math.random().toString(36).substring(7)}`;
-        const pdfPath = path.join(tempDir, `${tempId}.pdf`);
-
-        console.log(`Generating PDF at: ${pdfPath}`);
-        await page.pdf({
-            path: pdfPath,
+        // Generate PDF as Buffer (avoids read-only filesystem issues)
+        console.log('Generating PDF buffer...');
+        const pdfBuffer = await page.pdf({
             format: 'A4',
             printBackground: true,
             margin: {
@@ -52,11 +78,16 @@ export const generatePdf = async (data) => {
             }
         });
 
-        await browser.close();
         console.log('PDF generation complete.');
-        return pdfPath;
+        return pdfBuffer;
     } catch (error) {
-        console.error('Error generating PDF:', error);
-        throw error;
+        console.error('PDF Service Error:', error.message);
+        throw new Error(`Failed to generate PDF: ${error.message}`);
+    } finally {
+        if (browser !== null) {
+            await browser.close();
+            console.log('Browser closed.');
+        }
     }
 };
+

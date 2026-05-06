@@ -40,7 +40,6 @@ export const getAllInvoices = async (req, res) => {
 };
 
 export const generateInvoice = async (req, res) => {
-    let pdfPath = '';
     try {
         const invoiceData = req.body;
         const tenantId = req.header('x-tenant-id') || 'default-workspace';
@@ -81,7 +80,6 @@ export const generateInvoice = async (req, res) => {
 
         let logoBase64 = '';
         try {
-            // Note: Adjusted path for unified structure
             const logoPath = path.join(__dirname, '../../public/automexlogoblack.png');
             if (fs.existsSync(logoPath)) {
                 const logoBuffer = await fs.readFile(logoPath);
@@ -117,7 +115,8 @@ export const generateInvoice = async (req, res) => {
             logoUrl: logoBase64 || 'https://via.placeholder.com/150'
         };
 
-        pdfPath = await generatePdf(dataToRender);
+        console.log(`Generating PDF for ${dataToRender.invoiceNumber}...`);
+        const pdfBuffer = await generatePdf(dataToRender);
 
         let fileName = '';
         if (invoiceData.customFileName) {
@@ -125,8 +124,6 @@ export const generateInvoice = async (req, res) => {
         } else {
             fileName = `${invoiceData.invoiceNumber}-${invoiceData.customerName.replace(/\s+/g, '_')}.pdf`;
         }
-
-
 
         try {
             await Invoice.findOneAndUpdate(
@@ -163,26 +160,14 @@ export const generateInvoice = async (req, res) => {
         const safeFileName = fileName.replace(/[/\\?%*:|"<>]/g, '-');
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="${safeFileName}"`);
+        res.setHeader('Content-Length', pdfBuffer.length);
 
-
-
-        const fileStream = fs.createReadStream(pdfPath);
-        fileStream.pipe(res);
-
-        fileStream.on('end', async () => {
-            try {
-                await fs.remove(pdfPath);
-            } catch (err) {
-                console.error('Error deleting temp file:', err);
-            }
-        });
+        res.send(pdfBuffer);
+        console.log(`PDF ${safeFileName} sent to client.`);
 
     } catch (error) {
         console.error('Controller Error:', error);
         res.status(500).json({ error: 'Failed to generate invoice', details: error.message });
-
-        if (pdfPath && fs.existsSync(pdfPath)) {
-            await fs.remove(pdfPath);
-        }
     }
+
 };
