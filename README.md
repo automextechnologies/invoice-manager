@@ -1,6 +1,6 @@
 # Automex Invoice Micro-SaaS
 
-changed git account
+changed git account changed
 
 Automex is now structured as a micro-SaaS style invoicing app with:
 - page-based workflow (`Invoice`, `Customer Details`, `Company Details`)
